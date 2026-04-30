@@ -1,0 +1,937 @@
+
+%% configuration space
+
+startMouse = [scenarioMatrix(monteNumber, 8) scenarioMatrix(monteNumber, 7)];
+goalMouse = [30 30];
+mouseInitialOrientation = scenarioMatrix(monteNumber, 9);
+qGoalMouse = [goalMouse(2) goalMouse(1)];
+
+startCat1 = [scenarioMatrix(monteNumber, 2) scenarioMatrix(monteNumber, 1)];
+goalCat1 = startMouse;
+catInitialOrientation1 = scenarioMatrix(monteNumber, 3);
+qGoalCat1 = [goalCat1(2) goalCat1(1)];
+
+startCat2 = [scenarioMatrix(monteNumber, 5) scenarioMatrix(monteNumber, 4)];
+goalCat2 = startMouse;
+catInitialOrientation2 = scenarioMatrix(monteNumber, 6);
+qGoalCat2 = [goalCat2(2) goalCat2(1)];
+
+%% attractive field setup
+rhoGoalMouse = zeros(rows, cols);
+UattMouse = zeros(rows, cols);
+
+rhoGoalCat1 = zeros(rows, cols);
+UattCat1 = zeros(rows, cols);
+
+rhoGoalCat2 = zeros(rows, cols);
+UattCat2 = zeros(rows, cols);
+
+%% repulsive field
+rhoObstacle = zeros(rows, cols);
+Urep = zeros(rows, cols);
+
+for (i = 1:rows)
+    for (j = 1:cols)
+        if (space(i, j) == 0) 
+            maxDist = maxDistSet; % set max dist to 100, makes no dif now but may be useful when wanting to include only certain obstacles in calcs
+            for (k = 1:numObstacles)
+                dist = sqrt((i - obstacleRow(k))^2 + (j - obstacleCol(k))^2); % euclidean distance
+                if (dist < maxDist)
+                    maxDist = dist; % update the minimum distance
+                end
+            end
+            rhoObstacle(i, j) = maxDist;
+        else
+            rhoObstacle(i, j) = 0; 
+        end
+        Urep(i,j) = -1/2*(repulsion*(rhoObstacle(i,j).^2));
+        %Urep = repulsion/2 * (1./rhoObstacle - 1/maxDist).^2;
+    end
+end
+
+%% vortex field setup
+VxMouse = zeros(rows, cols);
+VyMouse = zeros(rows, cols);
+
+VxCat1 = zeros(rows, cols);
+VyCat1 = zeros(rows, cols);
+
+VxCat2 = zeros(rows, cols);
+VyCat2 = zeros(rows, cols);
+
+
+VxCat1Attraction = zeros(rows, cols);
+VyCat1Attraction = zeros(rows, cols);
+
+VxCat2Attraction = zeros(rows, cols);
+VyCat2Attraction = zeros(rows, cols);
+
+%% simulation
+
+targetPosition1centre = [0;0];
+targetPosition2centre = [0;0];
+
+cycles = cycleTotal; 
+goalsLeft = 1;
+
+mouseInitialLocation = startMouse;
+mouseCurrentPose = [mouseInitialLocation mouseInitialOrientation]'; % x y theta
+
+catInitialLocation1 = startCat1;
+catCurrentPose1 = [catInitialLocation1 catInitialOrientation1]'; % x y theta
+
+catInitialLocation2 = startCat2;
+catCurrentPose2 = [catInitialLocation2 catInitialOrientation2]'; % x y theta
+
+% for observer
+mouseAllPoses = [mouseCurrentPose];
+mouseAllVelocities = [0;0;0];
+it = 1;
+catAllPoses1 = [catCurrentPose1];
+catAllVelocities1 = [0;0;0];
+
+catAllPoses2 = [catCurrentPose2];
+catAllVelocities2 = [0;0;0];
+
+
+targetPosition1 = [mouseCurrentPose(1,1); mouseCurrentPose(2,1)];
+targetPosition2 = [mouseCurrentPose(1,1); mouseCurrentPose(2,1)];
+
+catDistanceToGoal1 = norm(catCurrentPose1(1:2) - mouseCurrentPose(1:2));
+catDistanceToGoal2 = norm(catCurrentPose2(1:2) - mouseCurrentPose(1:2));
+
+absCatVelocity1 = 2.0;
+absCatVelocity2 = 2.0;
+
+currentTime = 0;
+sampleTime = 0.125; % 10 Hz
+vizRate = rateControl(1/sampleTime); %0.1 or sampleTime
+
+%figure;
+[X, Y] = meshgrid(1:cols, 1:rows);
+
+needNewGoal = 1;
+cyclesMouse = 0;
+
+routeMouse = zeros([2000 4]);
+routeCat1 = zeros([2000 4]);
+routeCat2 = zeros([2000 4]);
+
+catVelocities1 = zeros([1000 2]);
+catVelocities2 = zeros([1000 2]);
+velocityCounter = 1;
+
+d = 0;
+tic
+while true
+    %% path planning
+    %% mouse
+    if (cycles >= cycleTotal)
+        if needNewGoal
+            goalLocX = randi([floor(mouseCurrentPose(1)-5) floor(mouseCurrentPose(1)+5)],1,1);
+            goalLocY = randi([floor(mouseCurrentPose(2)-5) floor(mouseCurrentPose(2)+5)],1,1);
+            goalLoc = [goalLocX goalLocY];
+           
+            check = checkOccupancy(map, goalLoc);
+            while (check ~= 0) || (norm(goalLoc(1:2)-catCurrentPose1(1:2)) < 3) || (norm(goalLoc(1:2)-catCurrentPose2(1:2)) < 3) %|| (25 > goalLocX || goalLocX > 75) || (25 > goalLocY || goalLocY > 75)
+                goalLocX = randi([floor(mouseCurrentPose(1)-10) floor(mouseCurrentPose(1)+10)],1,1);
+                goalLocY = randi([floor(mouseCurrentPose(2)-10) floor(mouseCurrentPose(2)+10)],1,1);
+                goalLoc = [goalLocX goalLocY];
+                check = checkOccupancy(map, goalLoc);
+            end
+        
+            % set goal
+            %goalLoc = [20, 40, 40, 40, 40, 20, 20, 20];
+            %goalMouse = [goalLoc(1 + d) goalLoc(2 + d)]; %goalsMouse(goalsLeft,:);
+            %d = d+2;
+            goalMouse = [goalLoc];
+            qGoalMouse = [goalMouse(2) goalMouse(1)];
+            qMouse = zeros([rows cols]);
+            qMouse(qGoalMouse(1), qGoalMouse(2)) = 1;
+            [goalRowMouse, goalColMouse] = find(qMouse == 1); % finds goal, kind of unnecessary at least now
+            numGoalsMouse = length(goalRowMouse);
+            needNewGoal = 0;
+        end
+
+        % attractive field
+        for (i = 1:rows)
+            for (j = 1:cols)
+                if (qMouse(i, j) == 0) 
+                    maxDist = 1000; % set max dist to 100, makes no dif now but may be useful when wanting to include only certain obstacles in calcs
+                    for (k = 1:numGoalsMouse)
+                        dist = sqrt((i - goalRowMouse(k))^2 + (j - goalColMouse(k))^2); % euclidean distance
+                        if (dist < maxDist)
+                            maxDist = dist; % update the minimum distance
+                        end
+                    end
+                    rhoGoalMouse(i, j) = maxDist;
+                else
+                    rhoGoalMouse(i, j) = 0; % Foreground pixels have a distance of 0
+                end
+                UattMouse(i,j) = 1/2*attraction*(rhoGoalMouse(i,j).^2);
+            end
+        end
+       
+        catPos = zeros([rows cols]);
+        catPos(floor(catCurrentPose1(2)), floor(catCurrentPose1(1))) = 1;
+        catPos(ceil(catCurrentPose1(2)), ceil(catCurrentPose1(1))) = 1;
+        catPos(floor(catCurrentPose2(2)), floor(catCurrentPose2(1))) = 1;
+        catPos(ceil(catCurrentPose2(2)), ceil(catCurrentPose2(1))) = 1;
+
+        [catRow, catCol] = find(catPos == 1); 
+        numCats = length(catRow);
+
+        rhoMouse = zeros(rows, cols);
+        UrepMouse = zeros(rows, cols);
+        
+        for (i = 1:rows)
+            for (j = 1:cols)
+                if (catPos(i, j) == 0) 
+                    maxDist = maxDistSetMouse; % set max dist to 100, makes no dif now but may be useful when wanting to include only certain obstacles in calcs
+                    for (k = 1:numCats)
+                        dist = sqrt((i - catRow(k))^2 + (j - catCol(k))^2); % euclidean distance
+                        if (dist < maxDist)
+                            maxDist = dist; % update the minimum distance
+                        end
+                    end
+                    rhoMouse(i, j) = maxDist;
+                else
+                    rhoMouse(i, j) = 0; 
+                end
+                UrepMouse(i,j) = -1/2*(repulsionMouse*(rhoMouse(i,j).^2));
+                %Urep = repulsion/2 * (1./rhoObstacle - 1/maxDist).^2;
+            end
+        end
+    
+        % path plan
+        % Utot
+        UtotMouse = UattMouse + Urep + UrepMouse;
+        % path plan
+        [gxApfMouse, gyApfMouse] = gradient(-UtotMouse);
+    
+        %deciding direction of vortex
+    
+        v1Mouse = mouseCurrentPose(1:2)' - obstacleCentre;
+        v2Mouse = goalLoc - obstacleCentre;
+        theta1Mouse = atan2(v1Mouse(2), v1Mouse(1));
+        theta2Mouse = atan2(v2Mouse(2), v2Mouse(1));
+        thetaChangeMouse = theta2Mouse- theta1Mouse;
+        thetaWrappedMouse = wrapToPi(thetaChangeMouse);
+    
+        if (thetaWrappedMouse > 0)
+            mouseVortexDirection = 1;
+        else
+            mouseVortexDirection = 0;
+        end    
+    
+        %adding vortex for mouse
+        for (i = 1:rows)
+            for (j = 1:cols)
+                if (space(i,j) == 0)   
+                    % find closest obstacle
+                    minDist = 100;
+                    closestObstacle = [0 0];
+                    for (k = 1:numObstacles)
+                        d = sqrt((i - obstacleRow(k))^2 + (j - obstacleCol(k))^2);
+                        if d < minDist
+                            minDist = d;
+                            closestObstacle = [obstacleRow(k), obstacleCol(k)];
+                        end
+                    end
+                    % apply vortex only near obstacles
+                    if (minDist < vortexRadius && minDist > 0)
+                        % radial direction
+                        rx = i - closestObstacle(1);
+                        ry = j - closestObstacle(2);
+                        rnorm = sqrt(rx^2 + ry^2);
+                        rx = rx / rnorm;
+                        ry = ry / rnorm;
+            
+                        if mouseVortexDirection==1
+                            tyMouse = ry;
+                            txMouse = -rx;
+                        else
+                            tyMouse = -ry;
+                            txMouse = rx;
+                        end
+    
+                        % distance-based decay
+                        scale = vortexGain * (1 - minDist/vortexRadius);
+        
+                        VxMouse(i,j) = scale * txMouse;
+                        VyMouse(i,j) = scale * tyMouse;
+                    end
+                end
+            end
+        end
+        
+        % combine APF + vortex
+        gxMouse = gxApfMouse + VxMouse;
+        gyMouse = gyApfMouse + VyMouse;
+        
+        iterations = 2000;
+        startMouse = mouseCurrentPose(1:2)';
+        pointOnRouteMouse = startMouse;
+        routeMouse = [startMouse; pointOnRouteMouse];
+    
+        while(iterations > 0)
+        
+            if(norm(goalMouse - pointOnRouteMouse) < tolerance)
+                break;
+            end
+            
+            xGradientAtCurrentLocationMouse = gxMouse(floor(pointOnRouteMouse(2)), floor(pointOnRouteMouse(1)));
+            yGradientAtCurrentLocationMouse = gyMouse(floor(pointOnRouteMouse(2)), floor(pointOnRouteMouse(1)));
+    
+            xNewRouteMouse = pointOnRouteMouse(1) + speed * xGradientAtCurrentLocationMouse;   
+            yNewRouteMouse = pointOnRouteMouse(2) + speed * yGradientAtCurrentLocationMouse; 
+            
+            pointOnRouteMouse = [xNewRouteMouse, yNewRouteMouse];
+            
+            routeMouse = [routeMouse; pointOnRouteMouse];
+            iterations = iterations - 1;
+        end
+        
+        % mouse robot model and controller
+        mouse = bicycleKinematics(MaxSteeringAngle=pi/3, WheelBase=1);
+        mouseGoal = routeMouse(end,:);
+        mouseController = controllerPurePursuit(Waypoints=routeMouse,DesiredLinearVelocity=mouseSpeed,MaxAngularVelocity=2,LookaheadDistance=lookDistance); % m/s, r/s, m
+        mouseDistanceToGoal = norm(mouseCurrentPose(1:2) - mouseGoal); % calculates current distance between robot and goal
+
+        
+        %% cat1
+        % set goal
+        goalCat1 = [floor(targetPosition1(1,1)), floor(targetPosition1(2,1))];%goalCat = [floor(mouseCurrentPose(1)), floor(mouseCurrentPose(2))];
+        qGoalCat1 = [goalCat1(2) goalCat1(1)];
+        qCat1 = zeros([rows cols]);
+        qCat1(qGoalCat1(1), qGoalCat1(2)) = 1;
+        [goalRowCat1, goalColCat1] = find(qCat1 == 1); % finds goal, kind of unnecessary at least now
+        numGoalsCat1 = length(goalRowCat1);
+    
+        % attractive field
+        for (i = 1:rows)
+            for (j = 1:cols)
+                if (qCat1(i, j) == 0) 
+                    maxDist = 100; % set max dist to 100, makes no dif now but may be useful when wanting to include only certain obstacles in calcs
+                    for (k = 1:numGoalsCat1)
+                        dist = sqrt((i - goalRowCat1(k))^2 + (j - goalColCat1(k))^2); % euclidean distance
+                        if (dist < maxDist)
+                            maxDist = dist; % update the minimum distance
+                        end
+                    end
+                    rhoGoalCat1(i, j) = maxDist;
+                else
+                    rhoGoalCat1(i, j) = 0; % Foreground pixels have a distance of 0
+                end
+                UattCat1(i,j) = 1/2*attraction*(rhoGoalCat1(i,j).^2);
+            end
+        end
+        
+        % spacing
+        catPos = zeros([rows cols]);
+        catPos(floor(catCurrentPose2(2)), floor(catCurrentPose2(1))) = 1;
+        catPos(ceil(catCurrentPose2(2)), ceil(catCurrentPose2(1))) = 1;
+
+        [catRow, catCol] = find(catPos == 1); 
+        numCats = length(catRow);
+
+        rhoCat1 = zeros(rows, cols);
+        UrepCat1 = zeros(rows, cols);
+        
+        for (i = 1:rows)
+            for (j = 1:cols)
+                if (catPos(i, j) == 0) 
+                    maxDist = maxDistSetCat * (norm(catCurrentPose1(1:2)' - mouseCurrentPose(1:2)')); % set max dist to 100, makes no dif now but may be useful when wanting to include only certain obstacles in calcs
+                    for (k = 1:numCats)
+                        dist = sqrt((i - catRow(k))^2 + (j - catCol(k))^2); % euclidean distance
+                        if (dist < maxDist)
+                            maxDist = dist; % update the minimum distance
+                        end
+                    end
+                    rhoCat1(i, j) = maxDist;
+                else
+                    rhoCat1(i, j) = 0; 
+                end
+                UrepCat1(i,j) = -1/2*(repulsionCat*(rhoCat1(i,j).^2));
+                %Urep = repulsion/2 * (1./rhoObstacle - 1/maxDist).^2;
+            end
+        end
+
+        % path plan
+        % Utot
+        UtotCat1 = UattCat1 + Urep + UrepCat1;
+        % path plan
+        [gxApfCat1, gyApfCat1] = gradient(-UtotCat1);
+
+        % attractive vortex
+        mousePos = zeros([rows cols]);
+        mousePos(floor(mouseCurrentPose(2)), floor(mouseCurrentPose(1))) = 1;
+        mousePos(ceil(mouseCurrentPose(2)), ceil(mouseCurrentPose(1))) = 1;
+        [mouseRow, mouseCol] = find(mousePos == 1); 
+        numMouses = length(mouseRow);
+        vortexRadiusCat = vortexRadiusCatParam1; % 5.0, influence radius
+
+        %adding vortex for mouse
+        for (i = 1:rows)
+            for (j = 1:cols)
+                if (mousePos(i,j) == 0)   
+                    % find closest obstacle
+                    minDist = 100;
+                    closestMouse = [0 0];
+                    for (k = 1:numMouses)
+                        d = sqrt((i - mouseRow(k))^2 + (j - mouseCol(k))^2);
+                        if d < minDist
+                            minDist = d;
+                            closestMouse = [mouseRow(k), mouseCol(k)];
+                        end
+                    end
+                    % apply vortex only near obstacles
+                    if (minDist < vortexRadiusCat && minDist > 0)
+                        % radial direction
+                        rx = i - closestMouse(1);
+                        ry = j - closestMouse(2);
+                        rnorm = sqrt(rx^2 + ry^2);
+                        rx = rx / rnorm;
+                        ry = ry / rnorm;
+        
+                        tyCat1Attraction = ry;
+                        txCat1Attraction = -rx;
+        
+                        % distance-based decay
+                        scale = vortexGainCat * (1 - minDist/vortexRadiusCat);% * (catDistanceToGoal1/absCatVelocity1);
+        
+                        VxCat1Attraction(i,j) = scale * txCat1Attraction;
+                        VyCat1Attraction(i,j) = scale * tyCat1Attraction;
+                    end
+                end
+            end
+        end
+        
+        %deciding direction of vortex for cat
+        cat1v1 = catCurrentPose1(1:2)' - obstacleCentre;
+        cat1v2 = mouseCurrentPose(1:2)' - obstacleCentre;
+        cat1theta1 = atan2(cat1v1(2), cat1v1(1));
+        cat1theta2 = atan2(cat1v2(2), cat1v2(1));
+        cat1thetaChange = cat1theta2 - cat1theta1;
+        cat1thetaWrapped = wrapToPi(cat1thetaChange);
+
+        if (cat1thetaWrapped > 0)
+            cat1VortexDirection = 1;
+        else
+            cat1VortexDirection = 0;
+        end    
+    
+        %adding vortex for obstacle
+        for (i = 1:rows)
+            for (j = 1:cols)
+                if (space(i,j) == 0)   
+                    % find closest obstacle
+                    minDist = 100;
+                    closestObstacle = [0 0];
+                    for (k = 1:numObstacles)
+                        d = sqrt((i - obstacleRow(k))^2 + (j - obstacleCol(k))^2);
+                        if d < minDist
+                            minDist = d;
+                            closestObstacle = [obstacleRow(k), obstacleCol(k)];
+                        end
+                    end
+                    % apply vortex only near obstacles
+                    if (minDist < vortexRadius && minDist > 0)
+                        % radial direction
+                        rx = i - closestObstacle(1);
+                        ry = j - closestObstacle(2);
+                        rnorm = sqrt(rx^2 + ry^2);
+                        rx = rx / rnorm;
+                        ry = ry / rnorm;
+            
+                        if cat1VortexDirection==1
+                            tyCat1 = ry;
+                            txCat1 = -rx;
+                        else
+                            tyCat1 = -ry;
+                            txCat1 = rx;
+                        end
+    
+                        % distance-based decay
+                        scale = vortexGain * (1 - minDist/vortexRadius);
+        
+                        VxCat1(i,j) = scale * txCat1;
+                        VyCat1(i,j) = scale * tyCat1;
+                    end
+                end
+            end
+        end
+
+
+        % combine APF + vortex
+        gxCat1 = gxApfCat1 + VxCat1 + VxCat1Attraction;
+        gyCat1 = gyApfCat1 + VyCat1 + VyCat1Attraction;
+        
+        iterations = 2000;
+        startCat1 = catCurrentPose1(1:2)';
+        pointOnRouteCat1 = startCat1;
+        routeCat1 = [startCat1; pointOnRouteCat1];
+        while(iterations > 0)
+            if(norm(goalCat1 - pointOnRouteCat1) < tolerance)
+                break;
+            end
+            xGradientAtCurrentLocationCat1 = gxCat1(floor(pointOnRouteCat1(2)), floor(pointOnRouteCat1(1)));
+            yGradientAtCurrentLocationCat1 = gyCat1(floor(pointOnRouteCat1(2)), floor(pointOnRouteCat1(1)));
+    
+            xNewRouteCat1 = pointOnRouteCat1(1) + speed * xGradientAtCurrentLocationCat1;   
+            yNewRouteCat1 = pointOnRouteCat1(2) + speed * yGradientAtCurrentLocationCat1; 
+            
+            pointOnRouteCat1 = [xNewRouteCat1, yNewRouteCat1];
+            
+            routeCat1 = [routeCat1; pointOnRouteCat1];
+            iterations = iterations - 1;
+        end
+        
+        % cat
+        cat1 = bicycleKinematics(MaxSteeringAngle=pi/3, WheelBase=1);
+        catGoal1 = routeCat1(end,:);
+        catController1 = controllerPurePursuit(Waypoints=routeCat1,DesiredLinearVelocity=speed1 ,MaxAngularVelocity=2,LookaheadDistance=lookDistance); % m/s, r/s, m
+
+        %% cat2
+        % set goal
+        goalCat2 = [floor(targetPosition2(1,1)), floor(targetPosition2(2,1))];%goalCat = [floor(mouseCurrentPose(1)), floor(mouseCurrentPose(2))];
+        qGoalCat2 = [goalCat2(2) goalCat2(1)];
+        qCat2 = zeros([rows cols]);
+        qCat2(qGoalCat2(1), qGoalCat2(2)) = 1;
+        [goalRowCat2, goalColCat2] = find(qCat2 == 1); % finds goal, kind of unnecessary at least now
+        numGoalsCat2 = length(goalRowCat2);
+    
+        % attractive field
+        for (i = 1:rows)
+            for (j = 1:cols)
+                if (qCat2(i, j) == 0) 
+                    maxDist = 100; % set max dist to 100, makes no dif now but may be useful when wanting to include only certain obstacles in calcs
+                    for (k = 1:numGoalsCat2)
+                        dist = sqrt((i - goalRowCat2(k))^2 + (j - goalColCat2(k))^2); % euclidean distance
+                        if (dist < maxDist)
+                            maxDist = dist; % update the minimum distance
+                        end
+                    end
+                    rhoGoalCat2(i, j) = maxDist;
+                else
+                    rhoGoalCat2(i, j) = 0; % Foreground pixels have a distance of 0
+                end
+                UattCat2(i,j) = 1/2*attraction*(rhoGoalCat2(i,j).^2);
+            end
+        end
+
+        % spacing
+        catPos = zeros([rows cols]);
+        catPos(floor(catCurrentPose1(2)), floor(catCurrentPose1(1))) = 1;
+        catPos(ceil(catCurrentPose1(2)), ceil(catCurrentPose1(1))) = 1;
+
+        [catRow, catCol] = find(catPos == 1); 
+        numCats = length(catRow);
+
+        rhoCat2 = zeros(rows, cols);
+        UrepCat2 = zeros(rows, cols);
+        
+        for (i = 1:rows)
+            for (j = 1:cols)
+                if (catPos(i, j) == 0) 
+                    maxDist = maxDistSetCat * (norm(catCurrentPose2(1:2)' - mouseCurrentPose(1:2)')); % set max dist to 100, makes no dif now but may be useful when wanting to include only certain obstacles in calcs
+                    for (k = 1:numCats)
+                        dist = sqrt((i - catRow(k))^2 + (j - catCol(k))^2); % euclidean distance
+                        if (dist < maxDist)
+                            maxDist = dist; % update the minimum distance
+                        end
+                    end
+                    rhoCat2(i, j) = maxDist;
+                else
+                    rhoCat2(i, j) = 0; 
+                end
+                UrepCat2(i,j) = -1/2*(repulsionCat*(rhoCat2(i,j).^2));
+                %Urep = repulsion/2 * (1./rhoObstacle - 1/maxDist).^2;
+            end
+        end
+
+        % path plan
+        % Utot
+        UtotCat2 = UattCat2 + Urep + UrepCat2;
+        % path plan
+        [gxApfCat2, gyApfCat2] = gradient(-UtotCat2);
+        
+        % attractive vortex
+        mousePos = zeros([rows cols]);
+        mousePos(floor(mouseCurrentPose(2)), floor(mouseCurrentPose(1))) = 1;
+        mousePos(ceil(mouseCurrentPose(2)), ceil(mouseCurrentPose(1))) = 1;
+        [mouseRow, mouseCol] = find(mousePos == 1); 
+        numMouses = length(mouseRow);
+        vortexRadiusCat2 = vortexRadiusCatParam2; % 5.0, influence radius
+
+        %adding vortex for mouse
+        for (i = 1:rows)
+            for (j = 1:cols)
+                if (mousePos(i,j) == 0)   
+                    % find closest obstacle
+                    minDist = 100;
+                    closestMouse = [0 0];
+                    for (k = 1:numMouses)
+                        d = sqrt((i - mouseRow(k))^2 + (j - mouseCol(k))^2);
+                        if d < minDist
+                            minDist = d;
+                            closestMouse = [mouseRow(k), mouseCol(k)];
+                        end
+                    end
+                    % apply vortex only near obstacles
+                    if (minDist < vortexRadiusCat2 && minDist > 0)
+                        % radial direction
+                        rx = i - closestMouse(1);
+                        ry = j - closestMouse(2);
+                        rnorm = sqrt(rx^2 + ry^2);
+                        rx = rx / rnorm;
+                        ry = ry / rnorm;
+        
+                        tyCat2Attraction = ry;
+                        txCat2Attraction = -rx;
+        
+                        % distance-based decay
+                        scale = vortexGainCat2 * (1 - minDist/vortexRadiusCat2);% * (catDistanceToGoal2/absCatVelocity2);
+        
+                        VxCat2Attraction(i,j) = scale * txCat2Attraction;
+                        VyCat2Attraction(i,j) = scale * tyCat2Attraction;
+                    end
+                end
+            end
+        end
+
+        %deciding direction of vortex for cat
+        cat2v1 = catCurrentPose2(1:2)' - obstacleCentre;
+        cat2v2 = mouseCurrentPose(1:2)' - obstacleCentre;
+        cat2theta1 = atan2(cat2v1(2), cat2v1(1));
+        cat2theta2 = atan2(cat2v2(2), cat2v2(1));
+        cat2thetaChange = cat2theta2 - cat2theta1;
+        cat2thetaWrapped = wrapToPi(cat2thetaChange);
+
+        if (cat2thetaWrapped > 0)
+            cat2VortexDirection = 1;
+        else
+            cat2VortexDirection = 0;
+        end    
+    
+        %adding vortex for mouse
+        for (i = 1:rows)
+            for (j = 1:cols)
+                if (space(i,j) == 0)   
+                    % find closest obstacle
+                    minDist = 100;
+                    closestObstacle = [0 0];
+                    for (k = 1:numObstacles)
+                        d = sqrt((i - obstacleRow(k))^2 + (j - obstacleCol(k))^2);
+                        if d < minDist
+                            minDist = d;
+                            closestObstacle = [obstacleRow(k), obstacleCol(k)];
+                        end
+                    end
+                    % apply vortex only near obstacles
+                    if (minDist < vortexRadius && minDist > 0)
+                        % radial direction
+                        rx = i - closestObstacle(1);
+                        ry = j - closestObstacle(2);
+                        rnorm = sqrt(rx^2 + ry^2);
+                        rx = rx / rnorm;
+                        ry = ry / rnorm;
+            
+                        if cat2VortexDirection==1
+                            tyCat2 = ry;
+                            txCat2 = -rx;
+                        else
+                            tyCat2 = -ry;
+                            txCat2 = rx;
+                        end
+    
+                        % distance-based decay
+                        scale = vortexGain * (1 - minDist/vortexRadius);
+        
+                        VxCat2(i,j) = scale * txCat2;
+                        VyCat2(i,j) = scale * tyCat2;
+                    end
+                end
+            end
+        end
+
+
+        % combine APF + vortex
+        gxCat2 = gxApfCat2 + VxCat2 + VxCat2Attraction;
+        gyCat2 = gyApfCat2 + VyCat2 + VyCat2Attraction;
+        
+        iterations = 2000;
+        startCat2 = catCurrentPose2(1:2)';
+        pointOnRouteCat2 = startCat2;
+        routeCat2 = [startCat2; pointOnRouteCat2];
+        while(iterations > 0)
+            if(norm(goalCat2 - pointOnRouteCat2) < tolerance)
+                break;
+            end
+            xGradientAtCurrentLocationCat2 = gxCat2(floor(pointOnRouteCat2(2)), floor(pointOnRouteCat2(1)));
+            yGradientAtCurrentLocationCat2 = gyCat2(floor(pointOnRouteCat2(2)), floor(pointOnRouteCat2(1)));
+    
+            xNewRouteCat2 = pointOnRouteCat2(1) + speed * xGradientAtCurrentLocationCat2;   
+            yNewRouteCat2 = pointOnRouteCat2(2) + speed * yGradientAtCurrentLocationCat2; 
+            
+            pointOnRouteCat2 = [xNewRouteCat2, yNewRouteCat2];
+            
+            routeCat2 = [routeCat2; pointOnRouteCat2];
+            iterations = iterations - 1;
+        end
+        
+        % cat
+        cat2 = bicycleKinematics(MaxSteeringAngle=pi/3, WheelBase=1);
+        catGoal2 = routeCat2(end,:);
+        catController2 = controllerPurePursuit(Waypoints=routeCat2,DesiredLinearVelocity=speed2,MaxAngularVelocity=2,LookaheadDistance=lookDistance); % m/s, r/s, m
+
+        cycles = 0;
+    end
+    %% simulating path following
+    %% mouse
+    [vMouse,omegaMouse] = mouseController(mouseCurrentPose);
+    velMouse = derivative(mouse,mouseCurrentPose,[vMouse omegaMouse]);
+    mouseCurrentPose = mouseCurrentPose + velMouse*sampleTime;
+    mouseDistanceToGoal = norm(mouseCurrentPose(1:2) - mouseGoal(:));
+
+    %% cat1
+    [vCat1,omegaCat1] = catController1(catCurrentPose1);
+    velCat1 = derivative(cat1,catCurrentPose1,[vCat1 omegaCat1]);
+    catCurrentPose1 = catCurrentPose1 + velCat1*sampleTime;
+    catDistanceToGoal1 = norm(catCurrentPose1(1:2) - mouseCurrentPose(1:2));
+
+    %% cat2
+    [vCat2,omegaCat2] = catController2(catCurrentPose2);
+    velCat2 = derivative(cat2,catCurrentPose2,[vCat2 omegaCat2]);
+    catCurrentPose2 = catCurrentPose2 + velCat2*sampleTime;
+    catDistanceToGoal2 = norm(catCurrentPose2(1:2) - mouseCurrentPose(1:2));
+
+
+    %% plotting 
+    show(map)
+    hold on
+    
+    % path planning plotting
+
+    % mouse
+    %quiver(X, Y, gxMouse, gyMouse, 2, 'b'); % quiver plot 
+    %quiver(X, Y, VxMouse, VyMouse, 0.8, 'b'); % vortex plot 
+    %plot(goalMouse(1), goalMouse(2), 'g.', 'MarkerSize', 10); % goal
+    %plot(routeMouse(:,1),routeMouse(:,2),"-gs",LineWidth=1,MarkerSize=1,MarkerFaceColor=[0.5 0.5 0.5]);
+    %text(mouseCurrentPose(1)+2, mouseCurrentPose(2), 'mouse', Color='g');
+
+    % cat 1
+    %quiver(X, Y, gxCat1, gyCat1, 2, 'b'); % quiver plot cat
+    %quiver(X, Y, VxCat1, VyCat1, 0.8, 'b');
+    %quiver(X, Y, VxCat1Attraction, VyCat1Attraction, 0.8, 'b');
+    plot(goalCat1(1), goalCat1(2), 'r.', 'MarkerSize', 30); % goal
+    %plot(targetPosition1centre(1), targetPosition1centre(2), '.','MarkerSize', 30, Color='magenta'); % 
+    %text(targetPosition1centre(1)+1, targetPosition1centre(2), '1', Color='magenta');
+    plot(routeCat1(:,1),routeCat1(:,2),"-gs",LineWidth=1,MarkerSize=1,MarkerFaceColor=[0.5 0.5 0.5]);
+    %text(catCurrentPose1(1)+2, catCurrentPose1(2), '1', Color='r');
+
+    % cat 2
+    %quiver(X, Y, gxCat2, gyCat2, 2, 'b'); % quiver plot cat
+    %quiver(X, Y, VxCat2, VyCat2, 0.8, 'b');
+    %quiver(X, Y, VxCat2Attraction, VyCat2Attraction, 0.8, 'b');
+    plot(goalCat2(1), goalCat2(2), 'g.', 'MarkerSize', 30); % goal
+    %plot(targetPosition2centre(1), targetPosition2centre(2), '.', 'MarkerSize', 30, Color='cyan');
+    %text(targetPosition2centre(1)+1, targetPosition2centre(2), '2', Color='cyan');
+    plot(routeCat2(:,1),routeCat2(:,2),"-gs",LineWidth=1,MarkerSize=1,MarkerFaceColor=[0.5 0.5 0.5]);
+    %text(catCurrentPose2(1)+2, catCurrentPose2(2), '2', Color='r');
+
+
+    % trajectory simulation plotting
+
+    % mouse
+    plotTrVecMouse = [mouseCurrentPose(1:2); 0];
+    plotRotMouse = axang2quat([0 0 1 mouseCurrentPose(3)]);
+    plotTransforms(plotTrVecMouse',plotRotMouse,MeshFilePath="groundvehicle.stl",Parent=gca,View="2D",FrameSize=1.75,MeshColor=[0 0 1]);
+
+    % cat1
+    plotTrVecCat1 = [catCurrentPose1(1:2); 0];
+    plotRotCat1 = axang2quat([0 0 1 catCurrentPose1(3)]);
+    plotTransforms(plotTrVecCat1',plotRotCat1,MeshFilePath="groundvehicle.stl",Parent=gca,View="2D",FrameSize=1.75,MeshColor=[1 0 0]);
+    
+    % cat2
+    plotTrVecCat2 = [catCurrentPose2(1:2); 0];
+    plotRotCat2 = axang2quat([0 0 1 catCurrentPose2(3)]);
+    plotTransforms(plotTrVecCat2',plotRotCat2,MeshFilePath="groundvehicle.stl",Parent=gca,View="2D",FrameSize=1.75,MeshColor=[1 0 0]);
+
+    hold off
+    
+    light;
+    xlim([23 76])
+    ylim([23 76])
+    
+    cycles = cycles + 1;
+
+    %% observer type thing
+    %mouseAllVelocities = [mouseAllVelocities mouseVelocity];
+    %catAllVelocities = [catAllVelocities catVelocity];
+
+    it = it + 1;
+    % mouse
+    mouseAllPoses = [mouseAllPoses mouseCurrentPose];
+    mouseVelocity = [(mouseAllPoses(1, it)-mouseAllPoses(1, it-1))/sampleTime;
+                     (mouseAllPoses(2, it)-mouseAllPoses(2, it-1))/sampleTime;
+                     (mouseAllPoses(3, it)-mouseAllPoses(3, it-1))/sampleTime]; 
+    % cat1
+    catAllPoses1 = [catAllPoses1 catCurrentPose1];
+    catVelocity1 = [(catAllPoses1(1, it)-catAllPoses1(1, it-1))/sampleTime;
+                   (catAllPoses1(2, it)-catAllPoses1(2, it-1))/sampleTime;
+                   (catAllPoses1(3, it)-catAllPoses1(3, it-1))/sampleTime]; 
+    absCatVelocity1 = sqrt((catVelocity1(1)^2)+(catVelocity1(2)^2));
+
+    period1 = predictionDistanceFollower*(catDistanceToGoal1/absCatVelocity1);
+
+    % cat2
+    catAllPoses2 = [catAllPoses2 catCurrentPose2];
+    catVelocity2 = [(catAllPoses2(1, it)-catAllPoses2(1, it-1))/sampleTime;
+                   (catAllPoses2(2, it)-catAllPoses2(2, it-1))/sampleTime;
+                   (catAllPoses2(3, it)-catAllPoses2(3, it-1))/sampleTime]; 
+    absCatVelocity2 = sqrt((catVelocity2(1)^2)+(catVelocity2(2)^2));
+
+    catVelocities1(velocityCounter, :) = [absCatVelocity1 abs(catVelocity1(3))];
+    catVelocities2(velocityCounter, :) = [absCatVelocity2 abs(catVelocity2(3))];
+    velocityCounter = velocityCounter + 1;
+
+
+    period2 = predictionDistanceLeader*(catDistanceToGoal2/absCatVelocity2);
+
+
+    % predicted target position
+    
+    % simplest implementation, have one come from left, one from right?
+    left = -sideDistance*(catDistanceToGoal1/absCatVelocity1);
+    right = sideDistance*(catDistanceToGoal2/absCatVelocity2);
+    
+    % here I just flipped the names 
+    targetPosition1centre = [mouseCurrentPose(1) + (mouseVelocity(1)*period1);
+                      mouseCurrentPose(2) + (mouseVelocity(2)*period1)];
+    targetPosition2centre = [mouseCurrentPose(1) + (mouseVelocity(1)*period2);
+                      mouseCurrentPose(2) + (mouseVelocity(2)*period2)]; 
+    targetPosition1 = [mouseCurrentPose(1) + (mouseVelocity(1)*period1);
+                      mouseCurrentPose(2) + (mouseVelocity(2)*period1)];
+    targetPosition2 = [mouseCurrentPose(1) + (mouseVelocity(1)*period2);
+                      mouseCurrentPose(2) + (mouseVelocity(2)*period2)];
+
+    cyclesMouse = cyclesMouse + 1;
+
+    if (catDistanceToGoal1 < catGoalRadius) || (catDistanceToGoal2 < catGoalRadius)
+        break
+    end
+    if (cyclesMouse > 10) || (mouseDistanceToGoal < mouseGoalRadius)
+        needNewGoal = 1;
+        cyclesMouse = 0;
+    end
+    %currentTime = currentTime + 0.125;
+    waitfor(vizRate);
+end
+times(monteNumber) = toc;
+%allTimes(totalNumber) = currentTime;
+
+%% figures
+% attractive field
+% figure;
+% m = mesh (UattMouse);
+% m.FaceLighting = 'gouraud';
+% axis equal;
+% 
+% repulsive field
+% figure;
+% m = mesh (Urep);
+% m.FaceLighting = 'gouraud';
+% axis equal;
+
+% total field
+% figure;
+% m = mesh (UtotMouse);
+% m.FaceLighting = 'gouraud';
+% axis equal;
+
+% quiver plot with planned path
+% figure;
+% show(map);
+% hold on;
+% quiver(X, Y, gx, gy, 0.8, 'b'); % quiver plot
+% plot(qGoal(2), qGoal(1), 'og', MarkerFaceColor='g', MarkerSize=10); % goal
+% plot(route(:,1), route(:,2), "-r", LineWidth=2); % route
+% hold off;
+% axis([1 cols 1 rows]);
+% xlim([0 22]);
+% ylim([0 22]);
+
+% quiver plot of vortex
+% figure;
+% hold on;
+% quiver(X, Y, Vx, Vy, 0.8, 'b'); % quiver plot
+% hold off;
+% axis([1 cols 1 rows]);
+% xlim([18 42]);
+% ylim([18 42]);
+
+%% 2D plots for comparison of tuning?
+
+%speed0.1 = [15.468, 15.749, 15.551, 15.367, 15.602]
+%speed0.5 = [15.404, 14.927, 15.068, 14.944, 15.311]
+%speed1.0 = [16.759, 16.725, 16.678, 16.136, 16.572]
+%speed0.75 = [20.161, 20.647]
+%speed0.25 = [19.402, 19.851]
+%highly dependent on lookahead distance of controller, but higher the
+%better for computational means (fewer iterations for path planning)
+
+% times = [15.058, 15.274, 14.684, 15.009, 15.843, 16.091, 15.783, 15.939, 15.490];
+% speeds = [0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0];
+% figure;
+% plot(times, speeds,'-x');
+% title('Tuning: speed')
+% xlabel('time');
+% ylabel('speed');
+% xlim([0 25])
+% ylim([0 4])
+
+%cycleTotal1 = [15.468, 15.749, 15.551, 15.367, 15.602]
+%cycleTotal5 = [21.408, 20.418, 20.914, 20.222, 19.854]
+%cycleTotal3 = [18.651, 18.992, 18.413, 18.742, 19.213]
+%at 10 it will only catch mouse due to chance
+%higher cycles only slower due to issue of inaccurate path at close
+%proximity to mouse
+%higher optimal at distance but lower optimal when close to mouse 
+
+% times = [15.169, 15.316, 15.587, 18.213, 19.841, 20.375, 22.497, 27.681];
+% cycles = [1, 2, 3, 4, 5, 6, 7, 8];
+% figure;
+% plot(times, cycles,'-x');
+% title('Tuning: cycles per update')
+% xlabel('time');
+% ylabel('cycles per update');
+% xlim([14 30])
+% ylim([0 10])
+
+
+%attraction0.1 = [15.468, 15.749, 15.551, 15.367, 15.602]
+%attraction0.2 not avoiding obstacles
+%attraction0.01 = [37.231, 38.420, 38.113, 37.863, 36.957] small enough
+%that vortex field is stronger than attraction
+%attraction0.05 = [16.135, 15.998, 15.874, 16.016, 15.988] 
+%attraction0.075 = [15.812, 15.764, 15.685, 15.641, 15.786]
+%tuning attraction results has tighter group than other params?
+%high attraction ideal, but too high results in not avoiding obstacles
+
+%repulsion2.0 = [15.468, 15.749, 15.551, 15.367, 15.602]
+%repulsion5.0 = [14.578, 14.565, 14.443, 14.305, 14.550]
+%too low and won't avoid obstacles, too high and won't  be able to operate
+%when mouse is close to obstacles, ideally in between the two to give
+%obstacles sufficient berth but not too much as to be inefficient.
+
+% times = [37.231, 35.402, 33.312, 16.385, 16.135, 15.812, 15.468];
+% attractions = [0.01, 0.02, 0.03, 0.04, 0.05, 0.075, 0.1];
+% figure;
+% plot(times, attractions,'-x');
+% title('Tuning: Attraction')
+% xlabel('time');
+% ylabel('attraction');
+% xlim([0 40])
+% ylim([0 0.11])
+
