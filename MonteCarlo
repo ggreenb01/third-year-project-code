@@ -1,0 +1,258 @@
+%% tuning params
+% bicycle models
+mouseSpeed = 3.5;
+speed1 = 3.8;
+speed2 = 3.8;
+lookDistance = 1.2;
+% SWARM
+sideDistance = 1.5; % 1.0
+% observer
+predictionDistanceFollower = 0.01;
+predictionDistanceLeader = 0.01;
+% APF
+attraction = 0.1; % 0.1
+repulsion =  3.0; % 2.0
+maxDistSet = 3.0; % 2.5, of repulsion from obstacles
+% cat APF
+repulsionCat = 0.5; % 0.75
+maxDistSetCat = 0.4;
+% cat APF for mouse
+repulsionMouse = 0.25;
+maxDistSetMouse = 10;
+% vortex 
+vortexGain = 3.0; % 1.0, strength of vortex
+vortexRadius = 3.0; % 5.0, influence radius
+% encirclement vortex 
+vortexGainCat = 0.01; % 1.0, strength of vortex
+vortexRadiusCatParam1 = 1.0; % 5.0, influence radius
+vortexGainCat2 = 0.01; % 1.0, strength of vortex
+vortexRadiusCatParam2 = 1.0; % 5.0, influence radius
+% path plan
+speed = 0.1; % 0.1, accuracy of path, effects computational efficiency
+tolerance = 0.2; % 0.2, final proxim to goal, effects computational efficiency
+% simulation
+cycleTotal = 2; % 1, amount of cycles before replanning cat path
+catGoalRadius = 1.5; % 1
+mouseGoalRadius = 1.75; % 1
+
+% Box whiskers plot
+
+% cluster data into groups, different ease for cats for ex, also, more sims
+% than 200 and more values, normal or smth, ultimate goal is to to tell
+% what values of params work best and in what scenarios, always context for
+% each value talked about in report, also the delta thing in slightly
+% consistent mouse values, same cat values.
+% more values for params / interpolation between vals?
+
+%% configuration space
+
+obsWidth = 1;
+obsHeight = 1;
+configHeight = 100;
+configWidth = 100;
+chosenObstacles = 5;
+space = zeros([configHeight configWidth]);
+[rows, cols] = size(space);
+
+centre = size(space)/2;
+square = ones([obsHeight obsWidth]); % 6 6 
+squareSize = size(square);
+                       
+% obstacles
+
+% borders
+space(1:24, :) =1;
+space(76:100, :) =1;
+space(:, 1:24) =1;
+space(:, 76:100) =1;
+
+% central square
+
+space(42:58, 42:58) = 1;
+
+% outer squares
+% space(12:15, 12:15) = 1; % bottom left
+% space(12:15, 46:49) = 1; % bottom right
+% space(46:49, 12:15) = 1; % top left
+% space(46:49, 46:49) = 1; % top right
+% 
+% % bottom left shape
+% space(22:24, 22:24) = 1;
+% space(18:24, 24:26) = 1;
+% 
+% % bottom right shape
+% space(18:20, 36:38) = 1;
+% space(20:22, 38:40) = 1;
+% space(22:24, 40:42) = 1;
+% 
+% % top left shape
+% space(39:42, 21:24) = 1;
+% space(42, 24:27) = 1;
+% space(36:38, 21) = 1;
+% 
+% % top right shape
+% space(36:43, 38:39) = 1;
+% space(39:40, 35:42) = 1;
+
+
+[obstacleRow, obstacleCol] = find(space == 1); 
+numObstacles = length(obstacleRow);
+space1 = flip(space);
+map = binaryOccupancyMap(space1);
+mapMatrix = occupancyMatrix(map);
+obstacleCentre = centre;
+
+%% assumptions
+
+l = 1.0;
+width = 0.25;
+mass = 3;
+momentOfInertia = 1/12*mass*((l^2)+(width^2));
+KE = 0;
+totalKE = 0;
+
+%% simulation
+
+ScenarioMatrix;
+apfdisMatrix = scenarioMatrix;
+sidesMatrix = scenarioMatrix;
+predchasMatrix = scenarioMatrix;
+noteamMatrix = scenarioMatrix;
+
+% allTimes = zeros([800 1]);
+% totalNumber = 1;
+
+figure;
+
+% for monteNumber = 195:200
+%     MonteCarloOneCat;
+%     for i = 3:velocityCounter
+%         KE = (1/2*mass*(catVelocities(i, 1)^2)) + (1/2*momentOfInertia*(catVelocities(i, 2)^2));
+%         totalKE = totalKE + KE;
+%     end
+%     monteNumber
+%     energy(monteNumber) = totalKE;
+%     totalKE = 0;
+%     apfdisMatrix = [y1x1Obstacle theta1 y2x2Obstacle theta2 y3x3Obstacle theta3 times energy];
+% end
+% 
+% predictionDistanceFollower = 0.25;
+% for monteNumber = 1:200
+%     MonteCarloOneCat;
+%     for i = 3:velocityCounter
+%         KE = (1/2*mass*(catVelocities(i, 1)^2)) + (1/2*momentOfInertia*(catVelocities(i, 2)^2));
+%         totalKE = totalKE + KE;
+%     end
+%     monteNumber
+%     energy(monteNumber) = totalKE;
+%     totalKE = 0;
+%     sidesMatrix = [y1x1Obstacle theta1 y2x2Obstacle theta2 y3x3Obstacle theta3 times energy];
+% end
+
+predictionDistanceFollower = 0.5;
+for monteNumber = 158:200
+    MonteCarloOneCat;
+    for i = 3:velocityCounter
+        KE = (1/2*mass*(catVelocities(i, 1)^2)) + (1/2*momentOfInertia*(catVelocities(i, 2)^2));
+        totalKE = totalKE + KE;
+    end
+    monteNumber
+    energy(monteNumber) = totalKE;
+    totalKE = 0;
+    predchasMatrix = [y1x1Obstacle theta1 y2x2Obstacle theta2 y3x3Obstacle theta3 times energy];
+end
+
+predictionDistanceFollower = 0.75;
+for monteNumber = 1:200
+    MonteCarloOneCat;
+    for i = 3:velocityCounter
+        KE = (1/2*mass*(catVelocities(i, 1)^2)) + (1/2*momentOfInertia*(catVelocities(i, 2)^2));
+        totalKE = totalKE + KE;
+    end
+    monteNumber
+    energy(monteNumber) = totalKE;
+    totalKE = 0;
+    noteamMatrix = [y1x1Obstacle theta1 y2x2Obstacle theta2 y3x3Obstacle theta3 times energy];
+end
+
+
+% for monteNumber = 200:200
+%     MonteCarloAPFDistancing;
+%     for i = 3:velocityCounter
+%         KE = (1/2*mass*(catVelocities1(i, 1)^2)) + (1/2*momentOfInertia*(catVelocities1(i, 2)^2)) ...
+%             + (1/2*mass*(catVelocities2(i, 1)^2)) + (1/2*momentOfInertia*(catVelocities2(i, 2)^2));
+%         totalKE = totalKE + KE;
+%     end
+%     monteNumber
+%     energy(monteNumber) = totalKE;
+%     totalKE = 0;
+%     apfdisMatrix = [y1x1 theta1 y2x2 theta2 y3x3 theta3 times energy];
+% end
+
+% for monteNumber = 162:200
+%     MonteCarloSides;
+%     for i = 3:velocityCounter
+%         KE = (1/2*mass*(catVelocities1(i, 1)^2)) + (1/2*momentOfInertia*(catVelocities1(i, 2)^2)) ...
+%             + (1/2*mass*(catVelocities2(i, 1)^2)) + (1/2*momentOfInertia*(catVelocities2(i, 2)^2));
+%         totalKE = totalKE + KE;
+%     end
+%     monteNumber
+%     energy(monteNumber) = totalKE;
+%     totalKE = 0;
+%     sidesMatrix = [y1x1 theta1 y2x2 theta2 y3x3 theta3 times energy];
+% end
+
+% for monteNumber = 1:200
+%     MonteCarloPredictorChaser;
+%     for i = 3:velocityCounter
+%         KE = (1/2*mass*(catVelocities1(i, 1)^2)) + (1/2*momentOfInertia*(catVelocities1(i, 2)^2)) ...
+%             + (1/2*mass*(catVelocities2(i, 1)^2)) + (1/2*momentOfInertia*(catVelocities2(i, 2)^2));
+%         totalKE = totalKE + KE;
+%     end
+%     monteNumber
+%     energy(monteNumber) = totalKE;
+%     totalKE = 0;
+%     apfdisMatrix = [y1x1 theta1 y2x2 theta2 y3x3 theta3 times energy];
+% end
+
+% predictionDistanceLeader = 0.5;
+% for monteNumber = 187:200
+%     MonteCarloPredictorChaser;
+%     for i = 3:velocityCounter
+%         KE = (1/2*mass*(catVelocities1(i, 1)^2)) + (1/2*momentOfInertia*(catVelocities1(i, 2)^2)) ...
+%             + (1/2*mass*(catVelocities2(i, 1)^2)) + (1/2*momentOfInertia*(catVelocities2(i, 2)^2));
+%         totalKE = totalKE + KE;
+%     end
+%     monteNumber
+%     energy(monteNumber) = totalKE;
+%     totalKE = 0;
+%     sidesMatrix = [y1x1 theta1 y2x2 theta2 y3x3 theta3 times energy];
+% end
+
+% predictionDistanceLeader = 0.75;
+% for monteNumber = 122:200
+%     MonteCarloPredictorChaser;
+%     for i = 3:velocityCounter
+%         KE = (1/2*mass*(catVelocities1(i, 1)^2)) + (1/2*momentOfInertia*(catVelocities1(i, 2)^2)) ...
+%             + (1/2*mass*(catVelocities2(i, 1)^2)) + (1/2*momentOfInertia*(catVelocities2(i, 2)^2));
+%         totalKE = totalKE + KE;
+%     end
+%     monteNumber
+%     energy(monteNumber) = totalKE;
+%     totalKE = 0;
+%     predchasMatrix = [y1x1 theta1 y2x2 theta2 y3x3 theta3 times energy];
+% end
+
+% for monteNumber = 1:200
+%     MonteCarloNoTeamwork;
+%     for i = 3:velocityCounter
+%         KE = (1/2*mass*(catVelocities1(i, 1)^2)) + (1/2*momentOfInertia*(catVelocities1(i, 2)^2)) ...
+%             + (1/2*mass*(catVelocities2(i, 1)^2)) + (1/2*momentOfInertia*(catVelocities2(i, 2)^2));
+%         totalKE = totalKE + KE;
+%     end
+%     monteNumber
+%     energy(monteNumber) = totalKE;
+%     totalKE = 0;
+%     noteamMatrix = [y1x1 theta1 y2x2 theta2 y3x3 theta3 times energy];
+% end
+ 
